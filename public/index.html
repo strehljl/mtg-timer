@@ -134,6 +134,10 @@
     .time-btn:active { background: #e94560; }
     .time-btn:disabled { opacity: 0.3; }
     .time-val { min-width: 46px; text-align: center; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .warn-sel { display: flex; gap: 4px; }
+    .warn-opt { padding: 5px 11px; border-radius: 8px; border: 1.5px solid #2a2a44; background: var(--surface); color: var(--muted); font-size: 12px; font-weight: 700; cursor: pointer; touch-action: manipulation; transition: all 0.15s; white-space: nowrap; }
+    .warn-opt.active { border-color: var(--gold); background: rgba(245,166,35,0.15); color: var(--gold); }
+    .warn-opt:disabled { opacity: 0.3; cursor: default; }
     .toggle { position: relative; width: 46px; height: 24px; flex-shrink: 0; }
     .toggle input { opacity: 0; width: 0; height: 0; }
     .toggle-slider { position: absolute; inset: 0; background: var(--card); border-radius: 24px; cursor: pointer; transition: 0.3s; }
@@ -371,6 +375,11 @@ function defaultPhaseTimes() {
   return Object.fromEntries(PHASES.map(p => [p.id, p.defaultTime]));
 }
 
+// Default warn: 10s for phases longer than 10s, otherwise no beep
+function defaultPhaseWarnAt() {
+  return Object.fromEntries(PHASES.map(p => [p.id, p.defaultTime > 10 ? 10 : 0]));
+}
+
 function sortedPlayers() {
   if (!app.session?.players) return [];
   return Object.values(app.session.players).sort((a, b) => a.seatIndex - b.seatIndex);
@@ -435,7 +444,7 @@ async function createGame() {
     players: {
       [app.playerId]: { id: app.playerId, name, color: PLAYER_COLORS[0], seatIndex: 0 },
     },
-    settings: { phaseTimes: defaultPhaseTimes(), skipZero: true },
+    settings: { phaseTimes: defaultPhaseTimes(), phaseWarnAt: defaultPhaseWarnAt(), skipZero: true },
     state: {
       phaseIndex: 0, phaseStartedAt: 0, phaseDuration: 0,
       paused: false, pausedTimeLeft: null,
@@ -662,7 +671,9 @@ function startClientTimer() {
   app.timerInterval = setInterval(() => {
     const t = computeTimeLeft();
     if (t !== app.lastBeepSecond) {
-      if (t > 0 && t <= 10) beep(660, 0.08, 0.3, 'square');
+      const phaseId = PHASES[app.session?.state?.phaseIndex]?.id;
+      const warnAt  = app.session?.settings?.phaseWarnAt?.[phaseId] ?? 10;
+      if (t > 0 && warnAt > 0 && t <= warnAt) beep(660, 0.08, 0.3, 'square');
       if (t === 0) { beep(440,0.08,0.4); setTimeout(()=>beep(440,0.08,0.4),120); setTimeout(()=>beep(550,0.18,0.5),260); }
       app.lastBeepSecond = t;
     }
@@ -875,22 +886,51 @@ function closeSettings() {
 function buildPhaseSettingsList() {
   const list = document.getElementById('phase-settings-list');
   list.innerHTML = '';
+  const isHost = app.isHost;
   PHASES.forEach(phase => {
-    const t = app.session?.settings?.phaseTimes?.[phase.id] ?? phase.defaultTime;
-    const row = document.createElement('div');
+    const t      = app.session?.settings?.phaseTimes?.[phase.id]  ?? phase.defaultTime;
+    const warnAt = app.session?.settings?.phaseWarnAt?.[phase.id] ?? (phase.defaultTime > 10 ? 10 : 0);
+    const dis    = isHost ? '' : 'disabled';
+    const row    = document.createElement('div');
     row.className = 'settings-row';
+    row.style.cssText = 'flex-direction:column; align-items:stretch; gap:10px';
     row.innerHTML = `
-      <div class="settings-row-left">
-        <span class="settings-row-name">${phase.name}</span>
-        <span class="settings-row-hint">${phase.group}</span>
+      <div style="display:flex; align-items:center; justify-content:space-between">
+        <div class="settings-row-left">
+          <span class="settings-row-name">${phase.name}</span>
+          <span class="settings-row-hint">${phase.group}</span>
+        </div>
+        <div class="time-ctrl">
+          <button class="time-btn" ${dis} onclick="adjustTime('${phase.id}', -5)">−</button>
+          <span class="time-val" id="tv-${phase.id}">${fmtSecs(t)}</span>
+          <button class="time-btn" ${dis} onclick="adjustTime('${phase.id}', 5)">+</button>
+        </div>
       </div>
-      <div class="time-ctrl">
-        <button class="time-btn" onclick="adjustTime('${phase.id}', -5)">−</button>
-        <span class="time-val" id="tv-${phase.id}">${fmtSecs(t)}</span>
-        <button class="time-btn" onclick="adjustTime('${phase.id}', 5)">+</button>
+      <div style="display:flex; align-items:center; justify-content:space-between">
+        <span style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:1px">Warning beep</span>
+        <div class="warn-sel">
+          ${[0, 5, 10].map(v => `
+            <button class="warn-opt ${warnAt === v ? 'active' : ''}" ${dis}
+              id="wo-${phase.id}-${v}" onclick="adjustWarnAt('${phase.id}', ${v})">
+              ${v === 0 ? 'None' : `${v}s`}
+            </button>`).join('')}
+        </div>
       </div>`;
     list.appendChild(row);
   });
+}
+
+function adjustWarnAt(phaseId, val) {
+  if (!app.isHost || !app.session) return;
+  if (!app.session.settings.phaseWarnAt) app.session.settings.phaseWarnAt = defaultPhaseWarnAt();
+  app.session.settings.phaseWarnAt[phaseId] = val;
+  // Update button highlights immediately
+  [0, 5, 10].forEach(v => {
+    document.getElementById(`wo-${phaseId}-${v}`)?.classList.toggle('active', v === val);
+  });
+  beep(val === 0 ? 330 : 550, 0.05, 0.2);
+  clearTimeout(settingsDebounce);
+  settingsDebounce = setTimeout(() => writeSession(app.session), 300);
 }
 
 let settingsDebounce = null;
