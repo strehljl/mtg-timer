@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>MTG Phase Timer</title>
+  <style>
+    :root {
+      --bg: #0e0e1a; --surface: #16213e; --card: #0f3460;
+      --gold: #f5a623; --text: #eaeaea; --muted: #6a6a88;
+      --green: #4caf50; --warn: #ff9800; --danger: #f44336;
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; height: 100dvh; overflow: hidden; }
+
+    .screen { display: none; flex-direction: column; height: 100dvh; overflow: hidden; }
+    .screen.active { display: flex; }
+
+    /* ── SHARED ── */
+    .btn { border: none; cursor: pointer; border-radius: var(--radius); font-size: 16px; font-weight: 700; transition: transform 0.1s; touch-action: manipulation; user-select: none; }
+    .btn:active { transform: scale(0.96); }
+    .btn:disabled { opacity: 0.35; pointer-events: none; }
+    .btn-primary { background: var(--gold); color: #1a1000; padding: 16px 24px; width: 100%; }
+    .btn-secondary { background: var(--surface); color: var(--text); padding: 14px 24px; width: 100%; border: 1px solid #2a2a44; }
+    .btn-ghost { background: transparent; color: var(--muted); border: none; font-size: 20px; cursor: pointer; padding: 8px; }
+    .input { width: 100%; padding: 14px 16px; border-radius: 12px; border: 1.5px solid #2a2a44; background: var(--surface); color: var(--text); font-size: 16px; outline: none; transition: border-color 0.2s; }
+    .input:focus { border-color: var(--gold); }
+    .input::placeholder { color: var(--muted); }
+    .input-code { text-transform: uppercase; letter-spacing: 4px; font-size: 20px; font-weight: 700; text-align: center; }
+    .field-label { font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); display: block; margin-bottom: 6px; }
+    .divider { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; }
+    .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: #2a2a44; }
+
+    /* ── HOME ── */
+    #home-screen { justify-content: center; padding: 32px 24px; gap: 24px; overflow-y: auto; }
+    .home-logo { text-align: center; }
+    .home-logo-icon { font-size: 48px; display: block; margin-bottom: 8px; }
+    .home-title { font-size: 28px; font-weight: 900; color: var(--gold); letter-spacing: 1px; }
+    .home-subtitle { font-size: 13px; color: var(--muted); margin-top: 4px; }
+    .home-section { display: flex; flex-direction: column; gap: 10px; }
+    .error-text { color: var(--danger); font-size: 13px; font-weight: 600; text-align: center; min-height: 18px; }
+
+    /* ── LOBBY ── */
+    #lobby-screen { overflow: hidden; }
+    .lobby-header { padding: 14px 16px 0; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+    .lobby-header-title { font-size: 18px; font-weight: 700; color: var(--muted); }
+    .lobby-code-box { margin: 16px 16px 0; background: var(--surface); border-radius: var(--radius); padding: 18px; text-align: center; border: 1px solid #2a2a44; flex-shrink: 0; }
+    .lobby-code-label { font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: var(--muted); margin-bottom: 6px; }
+    .lobby-code-value { font-size: 38px; font-weight: 900; letter-spacing: 10px; color: var(--gold); }
+    .lobby-code-hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .lobby-share-row { display: flex; gap: 10px; margin: 10px 16px 0; flex-shrink: 0; }
+    .share-btn { flex: 1; padding: 11px; border-radius: 12px; background: var(--surface); border: 1px solid #2a2a44; color: var(--text); font-size: 14px; font-weight: 600; cursor: pointer; touch-action: manipulation; transition: background 0.15s; display: flex; align-items: center; justify-content: center; gap: 6px; }
+    .share-btn:active { background: var(--card); }
+    .lobby-players-section { flex: 1; overflow-y: auto; padding: 14px 16px 0; }
+    .section-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 10px; }
+    .player-card { display: flex; align-items: center; gap: 12px; background: var(--surface); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; }
+    .player-avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 800; flex-shrink: 0; }
+    .player-card-name { font-size: 15px; font-weight: 700; }
+    .player-badge { font-size: 10px; padding: 2px 7px; border-radius: 6px; font-weight: 700; margin-left: 6px; background: rgba(245,166,35,0.2); color: var(--gold); }
+    .player-card-sub { font-size: 12px; color: var(--muted); }
+    .lobby-actions { padding: 14px 16px 20px; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; }
+    .lobby-waiting { font-size: 13px; color: var(--muted); text-align: center; }
+
+    /* ── TIMER ── */
+    #timer-screen { transition: background 0.3s; }
+    #timer-screen.warn-bg { background: #1a1200; }
+    #timer-screen.danger-bg { background: #1a0006; animation: pulse-bg 0.5s infinite alternate; }
+    @keyframes pulse-bg { from { background: #1a0006; } to { background: #300010; } }
+
+    .timer-top-bar { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px 4px; flex-shrink: 0; }
+    .turn-indicator { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+    .turn-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .turn-name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .turn-suffix { font-size: 12px; color: var(--muted); }
+    .player-dots-row { display: flex; gap: 5px; align-items: center; flex-shrink: 0; margin-left: 8px; }
+    .mini-dot { width: 8px; height: 8px; border-radius: 50%; opacity: 0.3; transition: opacity 0.3s, transform 0.3s; }
+    .mini-dot.active { opacity: 1; transform: scale(1.5); }
+
+    .phase-track { display: flex; gap: 3px; padding: 4px 16px; flex-shrink: 0; }
+    .phase-pip { flex: 1; height: 4px; border-radius: 2px; background: var(--surface); transition: background 0.3s; }
+    .phase-pip.done { background: var(--muted); }
+    .phase-pip.current { background: var(--gold); }
+
+    .timer-center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 0 16px; }
+    .phase-group-lbl { font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: var(--muted); }
+    .phase-name-lbl { font-size: clamp(22px, 6vw, 34px); font-weight: 800; text-align: center; text-transform: uppercase; color: var(--gold); }
+    .countdown { font-size: clamp(88px, 24vw, 148px); font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; color: var(--text); }
+    .countdown.warn { color: var(--warn); animation: cd-pulse 0.8s infinite alternate; }
+    .countdown.danger { color: var(--danger); animation: cd-pulse 0.4s infinite alternate; }
+    @keyframes cd-pulse { from { transform: scale(1); } to { transform: scale(1.04); } }
+    .time-lbl { font-size: 13px; color: var(--muted); }
+    .viewer-banner { display: none; background: rgba(0,0,0,0.45); border-radius: 10px; padding: 7px 14px; font-size: 12px; color: var(--muted); text-align: center; }
+    .viewer-banner.show { display: block; }
+
+    .next-btn { width: calc(100% - 32px); max-width: 480px; min-height: 82px; border-radius: var(--radius); border: none; background: var(--card); color: var(--text); font-size: clamp(17px, 5vw, 24px); font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; flex-shrink: 0; margin: 0 16px 8px; box-shadow: 0 4px 18px rgba(0,0,0,0.4); touch-action: manipulation; user-select: none; transition: background 0.15s, transform 0.1s, box-shadow 0.15s; }
+    .next-btn:active:not(:disabled) { transform: scale(0.97); }
+    .next-btn:disabled { opacity: 0.3; }
+    .next-btn.ready { background: #183820; }
+    .next-btn.warn-state { background: #342000; }
+    .next-btn.danger-state { background: #360010; animation: btn-pulse 0.5s infinite alternate; }
+    @keyframes btn-pulse { from { background: #360010; box-shadow: 0 4px 18px rgba(244,67,54,0.3); } to { background: #540018; box-shadow: 0 4px 28px rgba(244,67,54,0.7); } }
+
+    .action-row { display: flex; gap: 8px; padding: 0 16px 18px; flex-shrink: 0; }
+    .action-btn { flex: 1; padding: 13px 6px; border-radius: var(--radius); border: none; background: var(--surface); color: var(--text); font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.15s, transform 0.1s; touch-action: manipulation; }
+    .action-btn:active:not(:disabled) { transform: scale(0.96); background: var(--card); }
+    .action-btn:disabled { opacity: 0.3; }
+    .action-btn.pause-active { background: #182800; color: var(--green); }
+
+    /* ── OVERLAYS ── */
+    .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.88); z-index: 50; flex-direction: column; align-items: center; justify-content: center; gap: 20px; padding: 32px; }
+    .overlay.show { display: flex; }
+    .turn-end-title { font-size: clamp(26px, 7vw, 44px); font-weight: 900; color: var(--gold); text-align: center; }
+    .turn-end-sub { font-size: 15px; color: var(--muted); text-align: center; }
+    .next-player-card { display: flex; align-items: center; gap: 14px; background: var(--surface); border-radius: var(--radius); padding: 14px 20px; width: 100%; max-width: 320px; }
+    .next-player-dot { width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0; }
+    .next-player-name { font-size: 18px; font-weight: 800; }
+
+    /* ── SETTINGS OVERLAY ── */
+    #settings-overlay { position: fixed; inset: 0; z-index: 60; background: var(--bg); overflow-y: auto; display: none; flex-direction: column; }
+    #settings-overlay.show { display: flex; }
+    .settings-header { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid #1e1e30; position: sticky; top: 0; background: var(--bg); z-index: 1; flex-shrink: 0; }
+    .settings-title { font-size: 18px; font-weight: 700; }
+    .settings-host-tag { font-size: 11px; color: var(--muted); margin-left: auto; }
+    .settings-body { padding: 16px; display: flex; flex-direction: column; gap: 18px; }
+    .settings-row { display: flex; align-items: center; justify-content: space-between; background: var(--surface); padding: 12px 14px; border-radius: 12px; margin-bottom: 6px; }
+    .settings-row-left { display: flex; flex-direction: column; gap: 2px; }
+    .settings-row-name { font-size: 14px; font-weight: 600; }
+    .settings-row-hint { font-size: 11px; color: var(--muted); }
+    .time-ctrl { display: flex; align-items: center; gap: 10px; }
+    .time-btn { width: 34px; height: 34px; border-radius: 50%; border: none; background: var(--card); color: var(--text); font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; touch-action: manipulation; transition: background 0.15s; flex-shrink: 0; }
+    .time-btn:active { background: #e94560; }
+    .time-btn:disabled { opacity: 0.3; }
+    .time-val { min-width: 46px; text-align: center; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .toggle { position: relative; width: 46px; height: 24px; flex-shrink: 0; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider { position: absolute; inset: 0; background: var(--card); border-radius: 24px; cursor: pointer; transition: 0.3s; }
+    .toggle-slider::before { content: ''; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; background: var(--muted); border-radius: 50%; transition: 0.3s; }
+    .toggle input:checked + .toggle-slider { background: var(--green); }
+    .toggle input:checked + .toggle-slider::before { transform: translateX(22px); background: white; }
+
+    /* ── TOAST ── */
+    .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px); background: #2a2a3e; color: var(--text); padding: 12px 20px; border-radius: 10px; font-size: 14px; font-weight: 600; z-index: 100; transition: transform 0.3s; pointer-events: none; white-space: nowrap; max-width: 90vw; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+
+<!-- ════ HOME ════ -->
+<div id="home-screen" class="screen active">
+  <div class="home-logo">
+    <span class="home-logo-icon">⚔️</span>
+    <div class="home-title">MTG Phase Timer</div>
+    <div class="home-subtitle">Real-time multiplayer — up to 5 players</div>
+  </div>
+  <div class="home-section">
+    <label class="field-label" for="home-name">Your Name</label>
+    <input id="home-name" class="input" type="text" maxlength="24" placeholder="Enter your name" autocomplete="off" />
+  </div>
+  <div class="home-section">
+    <button class="btn btn-primary" onclick="createGame()">⚔ Create Game</button>
+  </div>
+  <div class="divider">or join existing</div>
+  <div class="home-section">
+    <label class="field-label" for="home-code">Session Code</label>
+    <input id="home-code" class="input input-code" type="text" maxlength="5" placeholder="XXXXX"
+      autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" />
+    <button class="btn btn-secondary" onclick="joinGame()">🔗 Join Game</button>
+    <div class="error-text" id="home-error"></div>
+  </div>
+</div>
+
+<!-- ════ LOBBY ════ -->
+<div id="lobby-screen" class="screen">
+  <div class="lobby-header">
+    <span class="lobby-header-title">Game Lobby</span>
+    <button class="btn-ghost" id="lobby-settings-btn" onclick="openSettings()" style="display:none">⚙️</button>
+  </div>
+  <div class="lobby-code-box">
+    <div class="lobby-code-label">Session Code</div>
+    <div class="lobby-code-value" id="lobby-code-display">—</div>
+    <div class="lobby-code-hint">Share this code with other players</div>
+  </div>
+  <div class="lobby-share-row">
+    <button class="share-btn" onclick="copyCode()">📋 Copy Code</button>
+    <button class="share-btn" onclick="shareLink()">🔗 Share Link</button>
+  </div>
+  <div class="lobby-players-section">
+    <div class="section-label">Players <span id="lobby-player-count"></span></div>
+    <div id="lobby-player-list"></div>
+  </div>
+  <div class="lobby-actions">
+    <div class="lobby-waiting" id="lobby-waiting-msg"></div>
+    <button class="btn btn-primary" id="lobby-start-btn" onclick="startGame()" style="display:none">▶ Start Game</button>
+  </div>
+</div>
+
+<!-- ════ TIMER ════ -->
+<div id="timer-screen" class="screen">
+  <div class="timer-top-bar">
+    <div class="turn-indicator">
+      <div class="turn-dot" id="turn-dot"></div>
+      <div>
+        <span class="turn-name" id="turn-name">Player</span>
+        <span class="turn-suffix">'s Turn</span>
+      </div>
+    </div>
+    <div class="player-dots-row" id="player-dots-row"></div>
+    <button class="btn-ghost" onclick="openSettings()" style="margin-left:6px">⚙️</button>
+  </div>
+  <div class="phase-track" id="phase-track"></div>
+  <div class="timer-center">
+    <div class="phase-group-lbl" id="phase-group-lbl"></div>
+    <div class="phase-name-lbl" id="phase-name-lbl">UNTAP</div>
+    <div class="countdown" id="countdown">—</div>
+    <div class="time-lbl" id="time-lbl">seconds remaining</div>
+    <div class="viewer-banner" id="viewer-banner">Viewing — not your turn</div>
+  </div>
+  <button class="next-btn" id="next-btn" onclick="advancePhase()">
+    <span>⚡</span><span id="next-btn-label">End Phase</span>
+  </button>
+  <div class="action-row">
+    <button class="action-btn" id="pause-btn" onclick="togglePause()">⏸ Pause</button>
+    <button class="action-btn" id="restart-btn" onclick="restartPhase()">↺ Restart</button>
+    <button class="action-btn" id="skip-btn" onclick="skipPhase()">Skip ▶▶</button>
+  </div>
+</div>
+
+<!-- ════ TURN-END OVERLAY ════ -->
+<div id="turn-end-overlay" class="overlay">
+  <div class="turn-end-title" id="turn-end-title">Turn Complete!</div>
+  <div class="turn-end-sub" id="turn-end-sub"></div>
+  <div class="next-player-card" id="next-player-card" style="display:none">
+    <div class="next-player-dot" id="next-player-dot"></div>
+    <div class="next-player-name" id="next-player-name"></div>
+  </div>
+  <button class="btn btn-primary" onclick="startNextTurn()" style="max-width:320px">▶ Start Next Turn</button>
+</div>
+
+<!-- ════ SETTINGS OVERLAY ════ -->
+<div id="settings-overlay">
+  <div class="settings-header">
+    <button class="btn-ghost" onclick="closeSettings()" style="color:var(--gold);font-size:18px">← Back</button>
+    <span class="settings-title">Settings</span>
+    <span class="settings-host-tag" id="settings-host-tag"></span>
+  </div>
+  <div class="settings-body">
+    <div>
+      <div class="section-label">Sound (this device only)</div>
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <span class="settings-row-name">Sound Effects</span>
+          <span class="settings-row-hint">Warning beeps &amp; phase-end tones</span>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="toggle-sound"
+            onchange="app.sound = this.checked; localStorage.setItem('mtg-sound', this.checked ? '1':'0')" />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+    <div id="host-settings" style="display:none">
+      <div class="section-label">Phase Durations <span style="color:var(--gold)">(host)</span></div>
+      <div id="phase-settings-list"></div>
+      <div class="section-label" style="margin-top:16px">Options</div>
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <span class="settings-row-name">Skip Zero-second Phases</span>
+          <span class="settings-row-hint">Auto-advance phases set to 0s</span>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="toggle-skip-zero" onchange="updateSkipZero(this.checked)" />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+    <div id="guest-settings-note" style="display:none;color:var(--muted);font-size:13px;text-align:center">
+      Phase times are controlled by the host.
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Supabase browser client -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<script>
+// ── Supabase connection ────────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://adkrjfyoajcylbrmzgyh.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_E8CcJxtmlXQ2XyUFb6b9GA_yDpJTDf8';
+
+// ── MTG phase definitions ─────────────────────────────────────────────────────
+const PHASES = [
+  { id: 'untap',      name: 'Untap',            group: 'Beginning',   defaultTime: 10  },
+  { id: 'upkeep',    name: 'Upkeep',           group: 'Beginning',   defaultTime: 30  },
+  { id: 'draw',      name: 'Draw',             group: 'Beginning',   defaultTime: 15  },
+  { id: 'main1',     name: 'Main Phase 1',      group: 'Pre-Combat',  defaultTime: 90  },
+  { id: 'boc',       name: 'Begin Combat',      group: 'Combat',      defaultTime: 15  },
+  { id: 'attackers', name: 'Declare Attackers', group: 'Combat',      defaultTime: 30  },
+  { id: 'blockers',  name: 'Declare Blockers',  group: 'Combat',      defaultTime: 30  },
+  { id: 'damage',    name: 'Combat Damage',     group: 'Combat',      defaultTime: 20  },
+  { id: 'eoc',       name: 'End of Combat',     group: 'Combat',      defaultTime: 10  },
+  { id: 'main2',     name: 'Main Phase 2',      group: 'Post-Combat', defaultTime: 60  },
+  { id: 'end',       name: 'End Step',          group: 'Ending',      defaultTime: 20  },
+  { id: 'cleanup',   name: 'Cleanup',           group: 'Ending',      defaultTime: 10  },
+];
+
+const PLAYER_COLORS = ['#f5a623','#4caf50','#2196f3','#9c27b0','#f44336'];
+
+// ── App state ─────────────────────────────────────────────────────────────────
+const app = {
+  db: null,
+  code: null,
+  playerId: null,
+  playerName: '',
+  isHost: false,
+  sound: true,
+  session: null,
+  realtimeChannel: null,
+  presenceChannel: null,
+  timerInterval: null,
+  lastBeepSecond: -1,
+  audioCtx: null,
+  wakeLock: null,
+};
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+function init() {
+  app.db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  // Restore sound pref
+  const s = localStorage.getItem('mtg-sound');
+  if (s !== null) app.sound = s === '1';
+  document.getElementById('toggle-sound').checked = app.sound;
+
+  // Stable per-browser player ID
+  app.playerId = localStorage.getItem('mtg-pid') || crypto.randomUUID();
+  localStorage.setItem('mtg-pid', app.playerId);
+
+  // Pre-fill join code from URL
+  const joinCode = new URLSearchParams(location.search).get('join');
+  if (joinCode) document.getElementById('home-code').value = joinCode.toUpperCase();
+
+  document.getElementById('home-name').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('home-code').value.trim() ? joinGame() : createGame();
+  });
+  document.getElementById('home-code').addEventListener('keydown', e => { if (e.key === 'Enter') joinGame(); });
+  document.getElementById('home-code').addEventListener('input', e => { e.target.value = e.target.value.toUpperCase(); });
+
+  document.addEventListener('touchstart', unlockAudio, { once: true });
+  document.addEventListener('click', unlockAudio, { once: true });
+
+  showScreen('home-screen');
+}
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id)?.classList.add('active');
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function generateCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({ length: 5 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+}
+
+function defaultPhaseTimes() {
+  return Object.fromEntries(PHASES.map(p => [p.id, p.defaultTime]));
+}
+
+function sortedPlayers() {
+  if (!app.session?.players) return [];
+  return Object.values(app.session.players).sort((a, b) => a.seatIndex - b.seatIndex);
+}
+
+function getActivePlayer() {
+  return sortedPlayers().find(p => p.id === app.session?.state?.currentPlayerId);
+}
+
+function canControl() {
+  if (!app.session) return false;
+  return app.playerId === app.session.hostId || app.playerId === app.session.state.currentPlayerId;
+}
+
+function fmtSecs(s) {
+  if (s === 0) return '0s';
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60), r = s % 60;
+  return r ? `${m}m${r}s` : `${m}m`;
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Database helpers ──────────────────────────────────────────────────────────
+
+// Write the full session object back to Supabase
+async function writeSession(session) {
+  const { error } = await app.db
+    .from('sessions')
+    .update({ data: session, updated_at: new Date().toISOString() })
+    .eq('code', app.code);
+  if (error) console.error('writeSession:', error);
+}
+
+// Convenience: merge partial state into session.state and write
+async function writeState(partial) {
+  const session = { ...app.session, state: { ...app.session.state, ...partial } };
+  await writeSession(session);
+}
+
+// ── Create / Join ─────────────────────────────────────────────────────────────
+function getPlayerName() {
+  return document.getElementById('home-name').value.trim().slice(0, 24) || 'Player';
+}
+
+function setError(msg) {
+  const el = document.getElementById('home-error');
+  el.textContent = msg;
+  setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 4000);
+}
+
+async function createGame() {
+  const name = getPlayerName();
+  app.playerName = name;
+  const code = generateCode();
+
+  const session = {
+    code,
+    hostId: app.playerId,
+    players: {
+      [app.playerId]: { id: app.playerId, name, color: PLAYER_COLORS[0], seatIndex: 0 },
+    },
+    settings: { phaseTimes: defaultPhaseTimes(), skipZero: true },
+    state: {
+      phaseIndex: 0, phaseStartedAt: 0, phaseDuration: 0,
+      paused: false, pausedTimeLeft: null,
+      currentPlayerId: app.playerId,
+      started: false, turnEnded: false, turnCount: 1,
+    },
+  };
+
+  const { error } = await app.db.from('sessions').insert({ code, data: session });
+  if (error) { setError('Could not create session. Check Supabase setup.'); console.error(error); return; }
+
+  app.code = code;
+  app.isHost = true;
+  history.replaceState({}, '', `/?join=${code}`);
+  await subscribeToSession(code);
+  showScreen('lobby-screen');
+  renderLobby();
+}
+
+async function joinGame() {
+  const name = getPlayerName();
+  app.playerName = name;
+  const code = document.getElementById('home-code').value.trim().toUpperCase();
+  if (code.length < 5) { setError('Enter the full 5-character code.'); return; }
+
+  const { data, error } = await app.db.from('sessions').select('data').eq('code', code).single();
+  if (error || !data) { setError('Session not found. Check the code.'); return; }
+
+  const session = data.data;
+  const players = Object.values(session.players || {});
+
+  // Already in session (e.g. page refresh)
+  if (session.players?.[app.playerId]) {
+    app.code = code;
+    app.isHost = session.hostId === app.playerId;
+    app.playerName = session.players[app.playerId].name;
+    history.replaceState({}, '', `/?join=${code}`);
+    await subscribeToSession(code);
+    showScreen(session.state.started ? 'timer-screen' : 'lobby-screen');
+    if (session.state.started) { buildPhasePips(); buildPlayerDots(); startClientTimer(); }
+    else renderLobby();
+    return;
+  }
+
+  if (players.length >= 5) { setError('Session is full (max 5 players).'); return; }
+
+  const seatIndex = players.length;
+  const newPlayer = { id: app.playerId, name, color: PLAYER_COLORS[seatIndex % PLAYER_COLORS.length], seatIndex };
+  const updatedSession = {
+    ...session,
+    players: { ...session.players, [app.playerId]: newPlayer },
+  };
+
+  const { error: upErr } = await app.db.from('sessions')
+    .update({ data: updatedSession, updated_at: new Date().toISOString() })
+    .eq('code', code);
+  if (upErr) { setError('Could not join session.'); return; }
+
+  app.code = code;
+  app.isHost = false;
+  history.replaceState({}, '', `/?join=${code}`);
+  await subscribeToSession(code);
+  showScreen(session.state.started ? 'timer-screen' : 'lobby-screen');
+  if (session.state.started) { buildPhasePips(); buildPlayerDots(); startClientTimer(); }
+  else renderLobby();
+}
+
+// ── Supabase realtime subscription ───────────────────────────────────────────
+async function subscribeToSession(code) {
+  // Postgres Changes — fires whenever the sessions row is updated
+  app.realtimeChannel = app.db
+    .channel(`session-db:${code}`)
+    .on('postgres_changes', {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'sessions',
+      filter: `code=eq.${code}`,
+    }, (payload) => {
+      const session = payload.new?.data;
+      if (session) handleSessionUpdate(session);
+    })
+    .subscribe();
+
+  // Presence — detects when a player's browser tab closes
+  app.presenceChannel = app.db.channel(`presence:${code}`);
+  app.presenceChannel
+    .on('presence', { event: 'leave' }, ({ leftPresences }) => {
+      leftPresences.forEach(p => {
+        if (p.playerId && p.playerId !== app.playerId) handlePlayerLeft(p.playerId);
+      });
+    })
+    .subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        await app.presenceChannel.track({ playerId: app.playerId, name: app.playerName });
+      }
+    });
+
+  // Load initial state
+  const { data } = await app.db.from('sessions').select('data').eq('code', code).single();
+  if (data?.data) handleSessionUpdate(data.data);
+}
+
+function handleSessionUpdate(session) {
+  const wasStarted = app.session?.state?.started;
+  app.session = session;
+  app.isHost = session.hostId === app.playerId;
+
+  if (session.state.started && !wasStarted) {
+    buildPhasePips();
+    buildPlayerDots();
+    showScreen('timer-screen');
+    startClientTimer();
+    acquireWakeLock();
+  }
+
+  if (session.state.started) {
+    updateTimerDisplay();
+    updateTurnIndicator();
+    updatePlayerDots();
+    updateControlAccess();
+    if (session.state.turnEnded) {
+      stopClientTimer();
+      showTurnEndOverlay();
+    } else {
+      document.getElementById('turn-end-overlay').classList.remove('show');
+    }
+  }
+
+  renderLobby();
+}
+
+// When a player's tab closes, the "senior" remaining player (lowest seatIndex)
+// removes them from the session to avoid multiple clients racing to update.
+async function handlePlayerLeft(leftPlayerId) {
+  if (!app.session?.players?.[leftPlayerId]) return;
+
+  const remaining = sortedPlayers().filter(p => p.id !== leftPlayerId);
+  if (!remaining.length) return;
+  // Only the first remaining player handles removal
+  if (remaining[0].id !== app.playerId) return;
+
+  const newPlayers = { ...app.session.players };
+  delete newPlayers[leftPlayerId];
+
+  let newHostId = app.session.hostId;
+  if (newHostId === leftPlayerId) newHostId = remaining[0].id;
+
+  let newCurrentPlayerId = app.session.state.currentPlayerId;
+  if (newCurrentPlayerId === leftPlayerId) newCurrentPlayerId = remaining[0].id;
+
+  await writeSession({ ...app.session, hostId: newHostId, players: newPlayers,
+    state: { ...app.session.state, currentPlayerId: newCurrentPlayerId } });
+}
+
+// ── Lobby ─────────────────────────────────────────────────────────────────────
+function renderLobby() {
+  if (!app.session) return;
+
+  document.getElementById('lobby-code-display').textContent = app.code;
+  const players = sortedPlayers();
+  document.getElementById('lobby-player-count').textContent = `(${players.length}/5)`;
+
+  const list = document.getElementById('lobby-player-list');
+  list.innerHTML = '';
+  players.forEach(p => {
+    const isMe = p.id === app.playerId;
+    const isHost = p.id === app.session.hostId;
+    const div = document.createElement('div');
+    div.className = 'player-card';
+    div.innerHTML = `
+      <div class="player-avatar" style="background:${p.color};color:#000">${p.name[0].toUpperCase()}</div>
+      <div style="flex:1">
+        <div class="player-card-name">${escHtml(p.name)}${isHost ? '<span class="player-badge">HOST</span>' : ''}</div>
+        <div class="player-card-sub">${isMe ? 'You' : 'Connected'}</div>
+      </div>`;
+    list.appendChild(div);
+  });
+
+  const startBtn = document.getElementById('lobby-start-btn');
+  const waitMsg  = document.getElementById('lobby-waiting-msg');
+  const settingsBtn = document.getElementById('lobby-settings-btn');
+
+  if (app.isHost) {
+    startBtn.style.display = 'block';
+    settingsBtn.style.display = 'block';
+    waitMsg.textContent = players.length < 2 ? `Waiting for more players… (${players.length}/2 min)` : '';
+  } else {
+    startBtn.style.display = 'none';
+    settingsBtn.style.display = 'none';
+    waitMsg.textContent = 'Waiting for the host to start…';
+  }
+}
+
+async function startGame() {
+  const firstPhase = PHASES[0];
+  await writeState({
+    started: true, turnEnded: false,
+    phaseIndex: 0, phaseStartedAt: Date.now(),
+    phaseDuration: app.session.settings.phaseTimes[firstPhase.id],
+    paused: false, pausedTimeLeft: null,
+    currentPlayerId: app.playerId,
+  });
+}
+
+// ── Client-side timer (uses phaseStartedAt for drift-free sync) ───────────────
+function computeTimeLeft() {
+  const gs = app.session?.state;
+  if (!gs) return 0;
+  if (gs.paused) return gs.pausedTimeLeft ?? gs.phaseDuration;
+  if (!gs.phaseStartedAt) return gs.phaseDuration;
+  return Math.max(0, gs.phaseDuration - Math.floor((Date.now() - gs.phaseStartedAt) / 1000));
+}
+
+function startClientTimer() {
+  stopClientTimer();
+  app.lastBeepSecond = -1;
+  app.timerInterval = setInterval(() => {
+    const t = computeTimeLeft();
+    if (t !== app.lastBeepSecond) {
+      if (t > 0 && t <= 10) beep(660, 0.08, 0.3, 'square');
+      if (t === 0) { beep(440,0.08,0.4); setTimeout(()=>beep(440,0.08,0.4),120); setTimeout(()=>beep(550,0.18,0.5),260); }
+      app.lastBeepSecond = t;
+    }
+    updateTimerDisplay();
+  }, 500);
+}
+
+function stopClientTimer() {
+  if (app.timerInterval) { clearInterval(app.timerInterval); app.timerInterval = null; }
+}
+
+// ── Timer UI ──────────────────────────────────────────────────────────────────
+function updateTimerDisplay() {
+  if (!app.session?.state?.started) return;
+  const gs = app.session.state;
+  const phase = PHASES[gs.phaseIndex] || PHASES[0];
+  const t = computeTimeLeft();
+
+  document.getElementById('phase-group-lbl').textContent = phase.group.toUpperCase();
+  document.getElementById('phase-name-lbl').textContent = phase.name.toUpperCase();
+  document.getElementById('countdown').textContent = t;
+  document.getElementById('time-lbl').textContent = t === 1 ? 'second remaining' : 'seconds remaining';
+
+  document.querySelectorAll('.phase-pip').forEach((pip, i) => {
+    pip.className = 'phase-pip' + (i < gs.phaseIndex ? ' done' : i === gs.phaseIndex ? ' current' : '');
+  });
+
+  const cd      = document.getElementById('countdown');
+  const screen  = document.getElementById('timer-screen');
+  const nextBtn = document.getElementById('next-btn');
+  const nextLbl = document.getElementById('next-btn-label');
+
+  cd.className = 'countdown';
+  screen.className = 'screen active';
+  nextBtn.className = 'next-btn';
+
+  if (t <= 0) {
+    cd.classList.add('danger'); screen.classList.add('danger-bg'); nextBtn.classList.add('danger-state');
+    nextLbl.textContent = "Time's Up! Next Phase";
+  } else if (t <= 10) {
+    cd.classList.add('danger'); screen.classList.add('danger-bg'); nextBtn.classList.add('danger-state');
+    nextLbl.textContent = 'End Phase';
+  } else {
+    const dur = gs.phaseDuration || 60;
+    if (t <= Math.ceil(dur * 0.35) && dur > 20) {
+      cd.classList.add('warn'); screen.classList.add('warn-bg'); nextBtn.classList.add('warn-state');
+    } else {
+      nextBtn.classList.add('ready');
+    }
+    nextLbl.textContent = 'End Phase';
+  }
+
+  document.getElementById('pause-btn').textContent = gs.paused ? '▶ Resume' : '⏸ Pause';
+  document.getElementById('pause-btn').classList.toggle('pause-active', gs.paused);
+}
+
+function updateTurnIndicator() {
+  const active = getActivePlayer();
+  if (!active) return;
+  document.getElementById('turn-dot').style.background = active.color;
+  document.getElementById('turn-name').textContent = active.name;
+}
+
+function buildPhasePips() {
+  const track = document.getElementById('phase-track');
+  track.innerHTML = '';
+  PHASES.forEach(() => { const d = document.createElement('div'); d.className = 'phase-pip'; track.appendChild(d); });
+}
+
+function buildPlayerDots() {
+  const row = document.getElementById('player-dots-row');
+  row.innerHTML = '';
+  sortedPlayers().forEach(p => {
+    const d = document.createElement('div');
+    d.className = 'mini-dot'; d.style.background = p.color; d.dataset.pid = p.id;
+    row.appendChild(d);
+  });
+}
+
+function updatePlayerDots() {
+  const active = getActivePlayer();
+  document.querySelectorAll('.mini-dot').forEach(d => {
+    d.classList.toggle('active', d.dataset.pid === active?.id);
+  });
+}
+
+function updateControlAccess() {
+  const ctrl = canControl();
+  ['next-btn','pause-btn','restart-btn','skip-btn'].forEach(id => {
+    document.getElementById(id).disabled = !ctrl;
+  });
+  const banner = document.getElementById('viewer-banner');
+  if (!ctrl) {
+    const active = getActivePlayer();
+    banner.textContent = active ? `Viewing — it's ${active.name}'s turn` : 'Viewing';
+    banner.classList.add('show');
+  } else {
+    banner.classList.remove('show');
+  }
+}
+
+// ── Game actions ──────────────────────────────────────────────────────────────
+async function advancePhase() {
+  if (!canControl()) { showToast("Not your turn"); return; }
+  beep(660, 0.07, 0.25);
+
+  const { state, settings } = app.session;
+  let next = state.phaseIndex + 1;
+  while (next < PHASES.length && settings.skipZero && settings.phaseTimes[PHASES[next]?.id] === 0) next++;
+
+  if (next >= PHASES.length) {
+    await writeState({ turnEnded: true, paused: false });
+    playTurnEndSound();
+  } else {
+    await writeState({
+      phaseIndex: next,
+      phaseStartedAt: Date.now(),
+      phaseDuration: settings.phaseTimes[PHASES[next].id],
+      paused: false, pausedTimeLeft: null, turnEnded: false,
+    });
+    app.lastBeepSecond = -1;
+  }
+}
+
+async function skipPhase() { advancePhase(); }
+
+async function restartPhase() {
+  if (!canControl()) { showToast("Not your turn"); return; }
+  beep(440, 0.06, 0.2);
+  const { state, settings } = app.session;
+  await writeState({
+    phaseStartedAt: Date.now(),
+    phaseDuration: settings.phaseTimes[PHASES[state.phaseIndex].id],
+    paused: false, pausedTimeLeft: null,
+  });
+  app.lastBeepSecond = -1;
+}
+
+async function togglePause() {
+  if (!canControl()) { showToast("Not your turn"); return; }
+  const gs = app.session.state;
+  if (gs.paused) {
+    const newStart = Date.now() - (gs.phaseDuration - (gs.pausedTimeLeft ?? 0)) * 1000;
+    await writeState({ paused: false, pausedTimeLeft: null, phaseStartedAt: newStart });
+    startClientTimer();
+  } else {
+    await writeState({ paused: true, pausedTimeLeft: computeTimeLeft() });
+    stopClientTimer();
+  }
+}
+
+async function startNextTurn() {
+  document.getElementById('turn-end-overlay').classList.remove('show');
+  const players = sortedPlayers();
+  const { state, settings } = app.session;
+  const curIdx  = players.findIndex(p => p.id === state.currentPlayerId);
+  const next    = players[(curIdx + 1) % players.length];
+  const first   = PHASES[0];
+  await writeState({
+    currentPlayerId: next.id,
+    phaseIndex: 0, phaseStartedAt: Date.now(),
+    phaseDuration: settings.phaseTimes[first.id],
+    paused: false, pausedTimeLeft: null,
+    turnEnded: false, turnCount: (state.turnCount || 1) + 1,
+  });
+  app.lastBeepSecond = -1;
+  startClientTimer();
+}
+
+// ── Turn-end overlay ──────────────────────────────────────────────────────────
+function showTurnEndOverlay() {
+  const players = sortedPlayers();
+  const { state } = app.session;
+  const from  = players.find(p => p.id === state.currentPlayerId);
+  const curIdx = players.findIndex(p => p.id === state.currentPlayerId);
+  const to    = players[(curIdx + 1) % players.length];
+
+  document.getElementById('turn-end-title').textContent =
+    from ? `${from.name}'s Turn Done!` : 'Turn Complete!';
+
+  if (to && to.id !== state.currentPlayerId) {
+    document.getElementById('next-player-dot').style.background = to.color;
+    document.getElementById('next-player-name').textContent = `${to.name}'s Turn`;
+    document.getElementById('next-player-card').style.display = 'flex';
+    document.getElementById('turn-end-sub').textContent = '';
+  } else {
+    document.getElementById('next-player-card').style.display = 'none';
+    document.getElementById('turn-end-sub').textContent = 'Ready for the next turn?';
+  }
+  document.getElementById('turn-end-overlay').classList.add('show');
+}
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+function openSettings() {
+  document.getElementById('toggle-sound').checked = app.sound;
+  document.getElementById('host-settings').style.display = app.isHost ? 'block' : 'none';
+  document.getElementById('guest-settings-note').style.display = app.isHost ? 'none' : 'block';
+  document.getElementById('settings-host-tag').textContent = app.isHost ? 'You are the host' : '';
+  if (app.isHost && app.session) {
+    buildPhaseSettingsList();
+    document.getElementById('toggle-skip-zero').checked = app.session.settings.skipZero;
+  }
+  document.getElementById('settings-overlay').classList.add('show');
+}
+
+function closeSettings() {
+  document.getElementById('settings-overlay').classList.remove('show');
+}
+
+function buildPhaseSettingsList() {
+  const list = document.getElementById('phase-settings-list');
+  list.innerHTML = '';
+  PHASES.forEach(phase => {
+    const t = app.session?.settings?.phaseTimes?.[phase.id] ?? phase.defaultTime;
+    const row = document.createElement('div');
+    row.className = 'settings-row';
+    row.innerHTML = `
+      <div class="settings-row-left">
+        <span class="settings-row-name">${phase.name}</span>
+        <span class="settings-row-hint">${phase.group}</span>
+      </div>
+      <div class="time-ctrl">
+        <button class="time-btn" onclick="adjustTime('${phase.id}', -5)">−</button>
+        <span class="time-val" id="tv-${phase.id}">${fmtSecs(t)}</span>
+        <button class="time-btn" onclick="adjustTime('${phase.id}', 5)">+</button>
+      </div>`;
+    list.appendChild(row);
+  });
+}
+
+let settingsDebounce = null;
+async function adjustTime(phaseId, delta) {
+  if (!app.isHost || !app.session) return;
+  const cur = app.session.settings.phaseTimes[phaseId] ?? 30;
+  const next = Math.max(0, Math.min(600, cur + delta));
+  // Optimistically update local copy so the UI responds immediately
+  app.session.settings.phaseTimes[phaseId] = next;
+  const el = document.getElementById('tv-' + phaseId);
+  if (el) el.textContent = fmtSecs(next);
+  beep(next === 0 ? 330 : 550, 0.05, 0.2);
+  clearTimeout(settingsDebounce);
+  settingsDebounce = setTimeout(() => {
+    writeSession(app.session);
+  }, 300);
+}
+
+async function updateSkipZero(val) {
+  if (!app.isHost || !app.session) return;
+  app.session.settings.skipZero = val;
+  await writeSession(app.session);
+}
+
+// ── Share ─────────────────────────────────────────────────────────────────────
+function copyCode() {
+  navigator.clipboard?.writeText(app.code).then(() => showToast('Code copied!'));
+}
+
+function shareLink() {
+  const url = `${location.origin}/?join=${app.code}`;
+  if (navigator.share) {
+    navigator.share({ title: 'MTG Phase Timer', text: `Join my game! Code: ${app.code}`, url });
+  } else {
+    navigator.clipboard?.writeText(url).then(() => showToast('Link copied!'));
+  }
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+let toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+// ── Audio ─────────────────────────────────────────────────────────────────────
+function unlockAudio() { try { getAudioCtx().resume(); } catch {} }
+
+function getAudioCtx() {
+  if (!app.audioCtx) app.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return app.audioCtx;
+}
+
+function beep(freq = 880, duration = 0.1, vol = 0.4, type = 'sine') {
+  if (!app.sound) return;
+  try {
+    const ctx = getAudioCtx();
+    if (ctx.state === 'suspended') ctx.resume();
+    const osc = ctx.createOscillator(), gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = type; osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.start(); osc.stop(ctx.currentTime + duration);
+  } catch {}
+}
+
+function playTurnEndSound() {
+  beep(523, 0.12, 0.5);
+  setTimeout(() => beep(659, 0.12, 0.5), 160);
+  setTimeout(() => beep(784, 0.25, 0.5), 320);
+}
+
+// ── Wake lock ─────────────────────────────────────────────────────────────────
+async function acquireWakeLock() {
+  try { if ('wakeLock' in navigator) app.wakeLock = await navigator.wakeLock.request('screen'); } catch {}
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') acquireWakeLock();
+});
+
+init();
+</script>
+</body>
+</html>

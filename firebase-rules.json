@@ -1,0 +1,10 @@
+{
+  "rules": {
+    "sessions": {
+      "$code": {
+        ".read": true,
+        ".write": true
+      }
+    }
+  }
+}

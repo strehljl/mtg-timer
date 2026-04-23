@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>MTG Phase Timer</title>
+  <style>
+    :root {
+      --bg: #1a1a2e;
+      --surface: #16213e;
+      --card: #0f3460;
+      --accent: #e94560;
+      --gold: #f5a623;
+      --text: #eaeaea;
+      --muted: #8888aa;
+      --green: #4caf50;
+      --warn: #ff9800;
+      --danger: #f44336;
+      --radius: 16px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── SCREENS ── */
+    .screen { display: none; flex-direction: column; height: 100dvh; }
+    .screen.active { display: flex; }
+
+    /* ── TIMER SCREEN ── */
+    #timer-screen {
+      position: relative;
+      background: var(--bg);
+      transition: background 0.3s;
+    }
+    #timer-screen.warn-bg { background: #2a1000; }
+    #timer-screen.danger-bg { background: #2a0008; animation: pulse-bg 0.5s infinite alternate; }
+
+    @keyframes pulse-bg {
+      from { background: #2a0008; }
+      to   { background: #4a0010; }
+    }
+
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px 8px;
+      flex-shrink: 0;
+    }
+
+    .player-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+    }
+
+    .player-dot {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.3s, transform 0.3s;
+    }
+    .player-dot.active {
+      background: var(--gold);
+      transform: scale(1.4);
+    }
+
+    .player-label {
+      font-size: 14px;
+      color: var(--gold);
+      font-weight: 600;
+    }
+
+    .settings-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 22px;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 8px;
+      transition: color 0.2s;
+    }
+    .settings-btn:active { color: var(--text); }
+
+    /* Phase progress bar */
+    .phase-track {
+      display: flex;
+      gap: 3px;
+      padding: 0 16px 8px;
+      flex-shrink: 0;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .phase-track::-webkit-scrollbar { display: none; }
+
+    .phase-pip {
+      flex: 1;
+      min-width: 18px;
+      height: 5px;
+      border-radius: 3px;
+      background: var(--surface);
+      transition: background 0.3s;
+    }
+    .phase-pip.done { background: var(--muted); }
+    .phase-pip.current { background: var(--gold); }
+
+    /* Main timer area */
+    .timer-center {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 0 16px;
+    }
+
+    .phase-name {
+      font-size: clamp(22px, 6vw, 36px);
+      font-weight: 700;
+      text-align: center;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--gold);
+      text-shadow: 0 0 20px rgba(245,166,35,0.4);
+    }
+
+    .phase-group {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+
+    .countdown {
+      font-size: clamp(80px, 22vw, 140px);
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+      transition: color 0.3s;
+      color: var(--text);
+      text-shadow: 0 2px 20px rgba(0,0,0,0.5);
+    }
+    .countdown.warn  { color: var(--warn);   text-shadow: 0 0 30px rgba(255,152,0,0.6); }
+    .countdown.danger { color: var(--danger); text-shadow: 0 0 30px rgba(244,67,54,0.8); animation: countdown-pulse 0.5s infinite alternate; }
+
+    @keyframes countdown-pulse {
+      from { transform: scale(1); }
+      to   { transform: scale(1.05); }
+    }
+
+    .phase-sub {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    /* Next phase button */
+    .next-btn {
+      width: calc(100% - 32px);
+      max-width: 480px;
+      min-height: 90px;
+      border-radius: var(--radius);
+      border: none;
+      background: var(--card);
+      color: var(--text);
+      font-size: clamp(18px, 5vw, 26px);
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      flex-shrink: 0;
+      margin: 0 16px 8px;
+      transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+      touch-action: manipulation;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .next-btn:active {
+      transform: scale(0.97);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    }
+    .next-btn.ready { background: #1a4a1a; }
+    .next-btn.warn-state { background: #4a2a00; }
+    .next-btn.danger-state { background: #4a0010; animation: btn-pulse 0.5s infinite alternate; }
+
+    @keyframes btn-pulse {
+      from { background: #4a0010; box-shadow: 0 4px 20px rgba(244,67,54,0.3); }
+      to   { background: #6a0018; box-shadow: 0 4px 30px rgba(244,67,54,0.7); }
+    }
+
+    .next-btn-icon { font-size: 1.3em; }
+
+    /* Bottom: Skip & Pause row */
+    .action-row {
+      display: flex;
+      gap: 10px;
+      padding: 0 16px 16px;
+      flex-shrink: 0;
+    }
+
+    .action-btn {
+      flex: 1;
+      padding: 14px;
+      border-radius: var(--radius);
+      border: none;
+      background: var(--surface);
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+      touch-action: manipulation;
+    }
+    .action-btn:active { transform: scale(0.96); background: var(--card); }
+    .action-btn.pause-active { background: #2a3a00; color: var(--green); }
+
+    /* Turn-end overlay */
+    .turn-end-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      z-index: 50;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 32px;
+    }
+    .turn-end-overlay.show { display: flex; }
+
+    .turn-end-title {
+      font-size: clamp(28px, 8vw, 48px);
+      font-weight: 900;
+      color: var(--gold);
+      text-align: center;
+    }
+
+    .turn-end-subtitle {
+      font-size: 16px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .turn-end-next-btn {
+      width: 100%;
+      max-width: 320px;
+      padding: 20px;
+      border-radius: var(--radius);
+      border: none;
+      background: var(--gold);
+      color: #1a1a00;
+      font-size: 20px;
+      font-weight: 800;
+      cursor: pointer;
+      touch-action: manipulation;
+      transition: transform 0.1s;
+    }
+    .turn-end-next-btn:active { transform: scale(0.97); }
+
+    /* ── SETTINGS SCREEN ── */
+    #settings-screen {
+      background: var(--bg);
+      overflow-y: auto;
+    }
+
+    .settings-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px;
+      border-bottom: 1px solid var(--surface);
+      flex-shrink: 0;
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      z-index: 10;
+    }
+
+    .back-btn {
+      background: none;
+      border: none;
+      color: var(--gold);
+      font-size: 22px;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 8px;
+    }
+
+    .settings-title {
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .settings-body {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .settings-section-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .settings-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface);
+      padding: 14px 16px;
+      border-radius: 12px;
+      margin-bottom: 6px;
+    }
+
+    .settings-row-label {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .settings-row-name { font-size: 15px; font-weight: 600; }
+    .settings-row-hint { font-size: 12px; color: var(--muted); }
+
+    .time-control {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .time-btn {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      border: none;
+      background: var(--card);
+      color: var(--text);
+      font-size: 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      touch-action: manipulation;
+      transition: background 0.15s;
+    }
+    .time-btn:active { background: var(--accent); }
+
+    .time-value {
+      min-width: 48px;
+      text-align: center;
+      font-size: 16px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface);
+      padding: 14px 16px;
+      border-radius: 12px;
+      margin-bottom: 6px;
+    }
+
+    .toggle {
+      position: relative;
+      width: 48px; height: 26px;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute;
+      inset: 0;
+      background: var(--card);
+      border-radius: 26px;
+      transition: 0.3s;
+      cursor: pointer;
+    }
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      width: 20px; height: 20px;
+      left: 3px; top: 3px;
+      background: var(--muted);
+      border-radius: 50%;
+      transition: 0.3s;
+    }
+    .toggle input:checked + .toggle-slider { background: var(--green); }
+    .toggle input:checked + .toggle-slider::before {
+      transform: translateX(22px);
+      background: white;
+    }
+
+    .player-count-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .player-count-btn {
+      flex: 1;
+      min-width: 52px;
+      padding: 12px 8px;
+      border-radius: 10px;
+      border: 2px solid var(--card);
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s;
+      touch-action: manipulation;
+    }
+    .player-count-btn.selected {
+      border-color: var(--gold);
+      background: rgba(245,166,35,0.15);
+      color: var(--gold);
+    }
+
+    .reset-btn {
+      width: 100%;
+      padding: 14px;
+      border-radius: 12px;
+      border: 1px solid var(--accent);
+      background: transparent;
+      color: var(--accent);
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 4px;
+      touch-action: manipulation;
+      transition: background 0.15s;
+    }
+    .reset-btn:active { background: rgba(233,69,96,0.15); }
+
+    /* Prevent text selection during timer use */
+    .next-btn, .action-btn, .turn-end-next-btn { user-select: none; }
+  </style>
+</head>
+<body>
+
+<!-- ════════════════════ TIMER SCREEN ════════════════════ -->
+<div id="timer-screen" class="screen active">
+
+  <div class="top-bar">
+    <div class="player-indicator" id="player-indicator">
+      <!-- dots injected by JS -->
+    </div>
+    <button class="settings-btn" onclick="showSettings()" title="Settings">⚙️</button>
+  </div>
+
+  <div class="phase-track" id="phase-track">
+    <!-- pips injected by JS -->
+  </div>
+
+  <div class="timer-center">
+    <div class="phase-group" id="phase-group"></div>
+    <div class="phase-name" id="phase-name">UNTAP</div>
+    <div class="countdown" id="countdown">60</div>
+    <div class="phase-sub" id="phase-sub">seconds remaining</div>
+  </div>
+
+  <button class="next-btn" id="next-btn" onclick="advancePhase()">
+    <span class="next-btn-icon">⚡</span>
+    <span id="next-btn-label">End Phase</span>
+  </button>
+
+  <div class="action-row">
+    <button class="action-btn" id="pause-btn" onclick="togglePause()">⏸ Pause</button>
+    <button class="action-btn" onclick="restartPhase()">↺ Restart Phase</button>
+    <button class="action-btn" onclick="skipPhase()">Skip ▶▶</button>
+  </div>
+</div>
+
+<!-- Turn-end overlay -->
+<div class="turn-end-overlay" id="turn-end-overlay">
+  <div class="turn-end-title" id="turn-end-title">Turn Complete!</div>
+  <div class="turn-end-subtitle" id="turn-end-subtitle">Pass to the next player</div>
+  <button class="turn-end-next-btn" onclick="startNextTurn()">▶ Start Next Turn</button>
+</div>
+
+<!-- ════════════════════ SETTINGS SCREEN ════════════════════ -->
+<div id="settings-screen" class="screen">
+  <div class="settings-header">
+    <button class="back-btn" onclick="closeSettings()">← Back</button>
+    <span class="settings-title">MTG Timer Settings</span>
+  </div>
+  <div class="settings-body">
+
+    <div>
+      <div class="settings-section-title">Players</div>
+      <div class="player-count-row" id="player-count-row"></div>
+    </div>
+
+    <div>
+      <div class="settings-section-title">Phase Durations</div>
+      <div id="phase-settings-list"></div>
+    </div>
+
+    <div>
+      <div class="settings-section-title">Options</div>
+
+      <div class="toggle-row">
+        <div class="settings-row-label">
+          <span class="settings-row-name">Sound Effects</span>
+          <span class="settings-row-hint">Beeps at 10s warning &amp; phase end</span>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="toggle-sound" onchange="saveSetting('sound', this.checked)" />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="toggle-row">
+        <div class="settings-row-label">
+          <span class="settings-row-name">Skip Zero-second Phases</span>
+          <span class="settings-row-hint">Auto-advance phases set to 0s</span>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="toggle-skip-zero" onchange="saveSetting('skipZero', this.checked)" />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="toggle-row">
+        <div class="settings-row-label">
+          <span class="settings-row-name">Keep Screen Awake</span>
+          <span class="settings-row-hint">Requests wake lock (browser support varies)</span>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="toggle-wakelock" onchange="saveSetting('wakeLock', this.checked)" />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div>
+      <div class="settings-section-title">Reset</div>
+      <button class="reset-btn" onclick="resetDefaults()">Reset All to Defaults</button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ──────────────────────────────────────────────
+//  PHASES DEFINITION
+// ──────────────────────────────────────────────
+const PHASES = [
+  { id: 'untap',     name: 'Untap',              group: 'Beginning',  defaultTime: 10  },
+  { id: 'upkeep',   name: 'Upkeep',             group: 'Beginning',  defaultTime: 30  },
+  { id: 'draw',     name: 'Draw',               group: 'Beginning',  defaultTime: 15  },
+  { id: 'main1',    name: 'Main Phase 1',        group: 'Pre-Combat', defaultTime: 90  },
+  { id: 'boc',      name: 'Begin Combat',        group: 'Combat',     defaultTime: 15  },
+  { id: 'attackers',name: 'Declare Attackers',   group: 'Combat',     defaultTime: 30  },
+  { id: 'blockers', name: 'Declare Blockers',    group: 'Combat',     defaultTime: 30  },
+  { id: 'damage',   name: 'Combat Damage',       group: 'Combat',     defaultTime: 20  },
+  { id: 'eoc',      name: 'End of Combat',       group: 'Combat',     defaultTime: 10  },
+  { id: 'main2',    name: 'Main Phase 2',        group: 'Post-Combat',defaultTime: 60  },
+  { id: 'end',      name: 'End Step',            group: 'Ending',     defaultTime: 20  },
+  { id: 'cleanup',  name: 'Cleanup',             group: 'Ending',     defaultTime: 10  },
+];
+
+// ──────────────────────────────────────────────
+//  STATE
+// ──────────────────────────────────────────────
+let state = {
+  phaseIndex: 0,
+  timeLeft: 0,
+  paused: false,
+  playerCount: 2,
+  currentPlayer: 0,
+  intervalId: null,
+  audioCtx: null,
+};
+
+let settings = loadSettings();
+
+// ──────────────────────────────────────────────
+//  PERSISTENCE
+// ──────────────────────────────────────────────
+function loadSettings() {
+  const defaults = {
+    sound: true,
+    skipZero: true,
+    wakeLock: true,
+    playerCount: 2,
+    phaseTimes: Object.fromEntries(PHASES.map(p => [p.id, p.defaultTime])),
+  };
+  try {
+    const saved = JSON.parse(localStorage.getItem('mtg-timer-settings') || '{}');
+    return { ...defaults, ...saved, phaseTimes: { ...defaults.phaseTimes, ...(saved.phaseTimes || {}) } };
+  } catch { return defaults; }
+}
+
+function saveSettings() {
+  localStorage.setItem('mtg-timer-settings', JSON.stringify(settings));
+}
+
+function saveSetting(key, value) {
+  settings[key] = value;
+  saveSettings();
+  if (key === 'wakeLock') value ? acquireWakeLock() : releaseWakeLock();
+}
+
+// ──────────────────────────────────────────────
+//  WAKE LOCK
+// ──────────────────────────────────────────────
+let wakeLock = null;
+async function acquireWakeLock() {
+  if (!settings.wakeLock) return;
+  try {
+    if ('wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+    }
+  } catch {}
+}
+async function releaseWakeLock() {
+  try { if (wakeLock) { await wakeLock.release(); wakeLock = null; } } catch {}
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') acquireWakeLock();
+});
+
+// ──────────────────────────────────────────────
+//  AUDIO
+// ──────────────────────────────────────────────
+function getAudioCtx() {
+  if (!state.audioCtx) state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return state.audioCtx;
+}
+
+function beep(freq = 880, duration = 0.1, vol = 0.4, type = 'sine') {
+  if (!settings.sound) return;
+  try {
+    const ctx = getAudioCtx();
+    if (ctx.state === 'suspended') ctx.resume();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + duration);
+  } catch {}
+}
+
+function playWarningBeep() {
+  beep(660, 0.12, 0.35, 'square');
+}
+
+function playEndBeep() {
+  beep(440, 0.08, 0.4);
+  setTimeout(() => beep(440, 0.08, 0.4), 120);
+  setTimeout(() => beep(550, 0.18, 0.5), 260);
+}
+
+function playTurnEndSound() {
+  beep(523, 0.12, 0.5);
+  setTimeout(() => beep(659, 0.12, 0.5), 150);
+  setTimeout(() => beep(784, 0.25, 0.5), 300);
+}
+
+// ──────────────────────────────────────────────
+//  TIMER CORE
+// ──────────────────────────────────────────────
+function startPhase(index) {
+  stopTimer();
+  state.phaseIndex = index;
+  const phase = PHASES[index];
+  const duration = settings.phaseTimes[phase.id];
+
+  if (settings.skipZero && duration === 0) {
+    advancePhase();
+    return;
+  }
+
+  state.timeLeft = duration;
+  state.paused = false;
+  updateTimerUI();
+  updatePauseBtn();
+
+  if (duration > 0) {
+    state.intervalId = setInterval(tick, 1000);
+  }
+}
+
+function tick() {
+  if (state.paused) return;
+  state.timeLeft--;
+
+  if (state.timeLeft === 10) playWarningBeep();
+  else if (state.timeLeft > 0 && state.timeLeft <= 10) playWarningBeep();
+  else if (state.timeLeft === 0) {
+    playEndBeep();
+    stopTimer();
+  }
+
+  updateTimerUI();
+}
+
+function stopTimer() {
+  if (state.intervalId) { clearInterval(state.intervalId); state.intervalId = null; }
+}
+
+function advancePhase() {
+  stopTimer();
+  beep(660, 0.08, 0.3);
+  const nextIndex = state.phaseIndex + 1;
+  if (nextIndex >= PHASES.length) {
+    endTurn();
+  } else {
+    startPhase(nextIndex);
+  }
+}
+
+function skipPhase() {
+  advancePhase();
+}
+
+function restartPhase() {
+  startPhase(state.phaseIndex);
+  beep(440, 0.06, 0.25);
+}
+
+function togglePause() {
+  state.paused = !state.paused;
+  updatePauseBtn();
+  if (!state.paused && state.timeLeft > 0 && !state.intervalId) {
+    state.intervalId = setInterval(tick, 1000);
+  }
+}
+
+function endTurn() {
+  stopTimer();
+  playTurnEndSound();
+  const overlay = document.getElementById('turn-end-overlay');
+  const title = document.getElementById('turn-end-title');
+  const subtitle = document.getElementById('turn-end-subtitle');
+  const nextPlayer = (state.currentPlayer + 1) % settings.playerCount;
+
+  if (settings.playerCount > 1) {
+    title.textContent = `Player ${state.currentPlayer + 1}'s Turn Done!`;
+    subtitle.textContent = `Pass to Player ${nextPlayer + 1}`;
+  } else {
+    title.textContent = 'Turn Complete!';
+    subtitle.textContent = 'Ready for next turn?';
+  }
+
+  overlay.classList.add('show');
+}
+
+function startNextTurn() {
+  document.getElementById('turn-end-overlay').classList.remove('show');
+  state.currentPlayer = (state.currentPlayer + 1) % settings.playerCount;
+  updatePlayerDots();
+  startPhase(0);
+}
+
+// ──────────────────────────────────────────────
+//  UI UPDATES
+// ──────────────────────────────────────────────
+function updateTimerUI() {
+  const phase = PHASES[state.phaseIndex];
+  const duration = settings.phaseTimes[phase.id];
+  const t = state.timeLeft;
+
+  // Names
+  document.getElementById('phase-name').textContent = phase.name.toUpperCase();
+  document.getElementById('phase-group').textContent = phase.group;
+
+  // Countdown
+  const cd = document.getElementById('countdown');
+  cd.textContent = t;
+
+  // Color states
+  const screen = document.getElementById('timer-screen');
+  const nextBtn = document.getElementById('next-btn');
+
+  cd.className = 'countdown';
+  screen.className = 'screen active';
+  nextBtn.className = 'next-btn';
+
+  if (t === 0) {
+    cd.classList.add('danger');
+    screen.classList.add('danger-bg');
+    nextBtn.classList.add('danger-state');
+    document.getElementById('next-btn-label').textContent = 'Time\'s Up! Next Phase';
+  } else if (t <= 10) {
+    cd.classList.add('danger');
+    screen.classList.add('danger-bg');
+    nextBtn.classList.add('danger-state');
+    document.getElementById('next-btn-label').textContent = 'End Phase';
+  } else if (t <= Math.ceil(duration * 0.35) && duration > 20) {
+    cd.classList.add('warn');
+    screen.classList.add('warn-bg');
+    nextBtn.classList.add('warn-state');
+    document.getElementById('next-btn-label').textContent = 'End Phase';
+  } else {
+    nextBtn.classList.add('ready');
+    document.getElementById('next-btn-label').textContent = 'End Phase';
+  }
+
+  // Seconds label
+  document.getElementById('phase-sub').textContent = t === 1 ? 'second remaining' : 'seconds remaining';
+
+  // Phase pips
+  const pips = document.querySelectorAll('.phase-pip');
+  pips.forEach((pip, i) => {
+    pip.className = 'phase-pip';
+    if (i < state.phaseIndex) pip.classList.add('done');
+    else if (i === state.phaseIndex) pip.classList.add('current');
+  });
+}
+
+function updatePauseBtn() {
+  const btn = document.getElementById('pause-btn');
+  if (state.paused) {
+    btn.textContent = '▶ Resume';
+    btn.classList.add('pause-active');
+  } else {
+    btn.textContent = '⏸ Pause';
+    btn.classList.remove('pause-active');
+  }
+}
+
+function updatePlayerDots() {
+  const indicator = document.getElementById('player-indicator');
+  indicator.innerHTML = '';
+
+  for (let i = 0; i < settings.playerCount; i++) {
+    const dot = document.createElement('div');
+    dot.className = 'player-dot' + (i === state.currentPlayer ? ' active' : '');
+    indicator.appendChild(dot);
+  }
+
+  const label = document.createElement('div');
+  label.className = 'player-label';
+  if (settings.playerCount > 1) {
+    label.textContent = `P${state.currentPlayer + 1}`;
+  }
+  indicator.appendChild(label);
+}
+
+// ──────────────────────────────────────────────
+//  SETTINGS SCREEN
+// ──────────────────────────────────────────────
+function buildPhasePips() {
+  const track = document.getElementById('phase-track');
+  track.innerHTML = '';
+  PHASES.forEach((_, i) => {
+    const pip = document.createElement('div');
+    pip.className = 'phase-pip';
+    track.appendChild(pip);
+  });
+}
+
+function buildSettingsUI() {
+  // Player count
+  const pcRow = document.getElementById('player-count-row');
+  pcRow.innerHTML = '';
+  [1,2,3,4,5].forEach(n => {
+    const btn = document.createElement('button');
+    btn.className = 'player-count-btn' + (settings.playerCount === n ? ' selected' : '');
+    btn.textContent = n + (n === 1 ? ' Player' : ' Players');
+    btn.onclick = () => {
+      settings.playerCount = n;
+      state.playerCount = n;
+      if (state.currentPlayer >= n) state.currentPlayer = 0;
+      saveSettings();
+      updatePlayerDots();
+      buildSettingsUI();
+    };
+    pcRow.appendChild(btn);
+  });
+
+  // Phase times
+  const list = document.getElementById('phase-settings-list');
+  list.innerHTML = '';
+  PHASES.forEach(phase => {
+    const row = document.createElement('div');
+    row.className = 'settings-row';
+    const hint = phase.group;
+    row.innerHTML = `
+      <div class="settings-row-label">
+        <span class="settings-row-name">${phase.name}</span>
+        <span class="settings-row-hint">${hint}</span>
+      </div>
+      <div class="time-control">
+        <button class="time-btn" onclick="adjustTime('${phase.id}', -5)">−</button>
+        <span class="time-value" id="tv-${phase.id}">${formatTime(settings.phaseTimes[phase.id])}</span>
+        <button class="time-btn" onclick="adjustTime('${phase.id}', 5)">+</button>
+      </div>`;
+    list.appendChild(row);
+  });
+
+  // Toggles
+  document.getElementById('toggle-sound').checked = settings.sound;
+  document.getElementById('toggle-skip-zero').checked = settings.skipZero;
+  document.getElementById('toggle-wakelock').checked = settings.wakeLock;
+}
+
+function formatTime(s) {
+  if (s === 0) return '0s';
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60), sec = s % 60;
+  return sec ? `${m}m${sec}s` : `${m}m`;
+}
+
+function adjustTime(phaseId, delta) {
+  const current = settings.phaseTimes[phaseId];
+  const next = Math.max(0, Math.min(600, current + delta));
+  settings.phaseTimes[phaseId] = next;
+  saveSettings();
+  document.getElementById('tv-' + phaseId).textContent = formatTime(next);
+  beep(next === 0 ? 330 : 550, 0.05, 0.2);
+}
+
+function showSettings() {
+  stopTimer();
+  state.paused = true;
+  updatePauseBtn();
+  buildSettingsUI();
+  document.getElementById('timer-screen').classList.remove('active');
+  document.getElementById('settings-screen').classList.add('active');
+}
+
+function closeSettings() {
+  document.getElementById('settings-screen').classList.remove('active');
+  document.getElementById('timer-screen').classList.add('active');
+  state.playerCount = settings.playerCount;
+  updatePlayerDots();
+  // Restart current phase with potentially updated duration
+  startPhase(state.phaseIndex);
+}
+
+function resetDefaults() {
+  if (!confirm('Reset all phase times and settings to defaults?')) return;
+  settings.phaseTimes = Object.fromEntries(PHASES.map(p => [p.id, p.defaultTime]));
+  settings.sound = true;
+  settings.skipZero = true;
+  settings.playerCount = 2;
+  saveSettings();
+  buildSettingsUI();
+}
+
+// ──────────────────────────────────────────────
+//  INIT
+// ──────────────────────────────────────────────
+function init() {
+  state.playerCount = settings.playerCount;
+  state.currentPlayer = 0;
+  buildPhasePips();
+  updatePlayerDots();
+  startPhase(0);
+  acquireWakeLock();
+
+  // Unlock audio on first touch
+  document.addEventListener('touchstart', () => {
+    try { getAudioCtx().resume(); } catch {}
+  }, { once: true });
+}
+
+init();
+</script>
+</body>
+</html>
