@@ -539,11 +539,13 @@ async function subscribeToSession(code) {
 }
 
 function handleSessionUpdate(session) {
-  const wasStarted = app.session?.state?.started;
+  const wasStarted    = app.session?.state?.started;
+  const wasTurnEnded  = app.session?.state?.turnEnded;
   app.session = session;
   app.isHost = session.hostId === app.playerId;
 
   if (session.state.started && !wasStarted) {
+    // Game just started
     buildPhasePips();
     buildPlayerDots();
     showScreen('timer-screen');
@@ -561,6 +563,11 @@ function handleSessionUpdate(session) {
       showTurnEndOverlay();
     } else {
       document.getElementById('turn-end-overlay').classList.remove('show');
+      // New turn just started — restart timer on every device
+      if (wasTurnEnded) {
+        app.lastBeepSecond = -1;
+        startClientTimer();
+      }
     }
   }
 
